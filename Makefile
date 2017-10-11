@@ -6,6 +6,9 @@
 # Syntax example: make OUTPUT=./output LANGUAGE=java
 #
 
+# Install prefix
+PREFIX ?= /opt/build/googleapis
+
 # Choose the output directory
 OUTPUT ?= ./gens
 
@@ -50,7 +53,10 @@ SUFFIX_GRPC_HDR:= grpc.pb.h
 SUFFIX_PROTO_OBJ:= pb.o
 SUFFIX_GRPC_OBJ:= grpc.pb.o
 
-PROTOS:= $(shell find google $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto')
+API_PROTOS:= $(shell find google -type f -name '*.proto')
+#PROTOBUF_PROTOS:= $(shell find $(PROTOINCLUDE)/google/protobuf -type f -name '*.proto')
+PROTOBUF_PROTOS:=
+PROTOS:= $(API_PROTOS) $(PROTOBUF_PROTOS)
 
 BASEPROTOS:= $(patsubst $(PROTOINCLUDE)/%,%,$(PROTOS))
 
@@ -65,14 +71,26 @@ GRPC_OBJS = $(GRPC_SRCS:.$(SUFFIX_GRPC_SRC)=.$(SUFFIX_GRPC_OBJ))
 
 DEPS_PROTO:= $(PROTOS)
 DEPS_SRC:= $(addprefix $(OUTPUT)/,$(PROTO_SRCS) $(GRPC_SRCS))
-DEPS_HDR:= $(addprefix $(OUTPUT)/,$(PROTO_HDRS) $(GRPC_HDRS))
+DEPS_HDR:= $(addprefix $(OUTPUT)/include/,$(PROTO_HDRS) $(GRPC_HDRS))
 DEPS_OBJ:= $(addprefix $(OUTPUT_BIN)/,$(PROTO_OBJS) $(GRPC_OBJS))
+
+INSTALL_HDR:= $(addprefix $(OUTPUT)/include/,$(API_PROTOS:.proto=.$(SUFFIX_PROTO_HDR)) $(API_PROTOS:.proto=.$(SUFFIX_GRPC_HDR)))
 
 DIR_OBJ:= $(sort $(dir $(DEPS_OBJ)))
 
-.PHONY: all libs clean
+.PHONY: all libs install clean
 
 all: libs
+
+install: libgoogleapis.a $(DEPS_HDR) | $(PREFIX)
+	cp -f libgoogleapis.a $(PREFIX)/lib/
+#	cp -rf $(INSTALL_HDR) $(PREFIX)/include
+	cp -rf $(OUTPUT)/include $(PREFIX)
+
+$(PREFIX): 
+	mkdir -p $(PREFIX)
+	mkdir -p $(PREFIX)/include
+	mkdir -p $(PREFIX)/lib
 
 libs: libgoogleapis.a
 
@@ -84,19 +102,26 @@ $(DEPS_OBJ): $(DEPS_SRC) $(DEPS_HDR)
 $(DEPS_SRC) $(DEPS_HDR): $(DEPS_PROTO)
 
 $(OUTPUT_BIN)/%.$(SUFFIX_PROTO_OBJ): $(OUTPUT)/%.$(SUFFIX_PROTO_SRC) $(DEPS_HDR) | $(DIR_OBJ)
-	g++ -std=c++11 -I$(OUTPUT) -I$(PROTOINCLUDE) -I$(GRPCINCLUDE) -c -g -O2 -o $@ $<
+	g++ -std=c++11 -I$(OUTPUT)/include -I$(PROTOINCLUDE) -I$(GRPCINCLUDE) -c -g -O2 -o $@ $<
 
 $(DIR_OBJ):
 	mkdir -p $@
 
-$(OUTPUT)/%.$(SUFFIX_PROTO_SRC) $(OUTPUT)/%.$(SUFFIX_GRPC_SRC) $(OUTPUT)/%.$(SUFFIX_PROTO_HDR) $(OUTPUT)/%.$(SUFFIX_GRPC_HDR): %.proto | $(OUTPUT)
+$(OUTPUT)/%.$(SUFFIX_PROTO_SRC) $(OUTPUT)/%.$(SUFFIX_GRPC_SRC) $(OUTPUT)/include/%.$(SUFFIX_PROTO_HDR) $(OUTPUT)/include/%.$(SUFFIX_GRPC_HDR): %.proto | $(OUTPUT)
 	$(PROTOC) $(FLAGS) $<
+	mkdir --parents $(OUTPUT)/include/$(dir $*)
+	mv $(OUTPUT)/$*.$(SUFFIX_PROTO_HDR) $(OUTPUT)/include/$*.$(SUFFIX_PROTO_HDR)
+	mv $(OUTPUT)/$*.$(SUFFIX_GRPC_HDR) $(OUTPUT)/include/$*.$(SUFFIX_GRPC_HDR)
 
-$(OUTPUT)/%.$(SUFFIX_PROTO_SRC) $(OUTPUT)/%.$(SUFFIX_GRPC_SRC) $(OUTPUT)/%.$(SUFFIX_PROTO_HDR) $(OUTPUT)/%.$(SUFFIX_GRPC_HDR): $(PROTOINCLUDE)/%.proto | $(OUTPUT)
+$(OUTPUT)/%.$(SUFFIX_PROTO_SRC) $(OUTPUT)/%.$(SUFFIX_GRPC_SRC) $(OUTPUT)/include/%.$(SUFFIX_PROTO_HDR) $(OUTPUT)/include/%.$(SUFFIX_GRPC_HDR): $(PROTOINCLUDE)/%.proto | $(OUTPUT)
 	$(PROTOC) $(FLAGS) $<
+	mkdir --parents $(OUTPUT)/include/$(dir $*)
+	mv $(OUTPUT)/$*.$(SUFFIX_PROTO_HDR) $(OUTPUT)/include/$*.$(SUFFIX_PROTO_HDR)
+	mv $(OUTPUT)/$*.$(SUFFIX_GRPC_HDR) $(OUTPUT)/include/$*.$(SUFFIX_GRPC_HDR)
 
 $(OUTPUT):
 	mkdir -p $@
+	mkdir -p $@/include
 
 clean:
 	rm $(patsubst %,$(OUTPUT)/%,$(DEPS)) 2> /dev/null
